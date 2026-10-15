@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sprint Timer</title>
+<style>
+:root{--bg:#f4f5f7;--fg:#14161a;--card:#fff;--mut:#6b7280;--acc:#0ca678;--bd:#d8dbe0;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1013;--fg:#f1f3f5;--card:#1a1d22;--mut:#9aa1ab;--bd:#2c3037;--acc:#20c997}}
+:root[data-theme="dark"]{--bg:#0e1013;--fg:#f1f3f5;--card:#1a1d22;--mut:#9aa1ab;--bd:#2c3037;--acc:#20c997}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Roboto,sans-serif}
+#app{max-width:720px;margin:0 auto;padding:10px;display:flex;flex-direction:column;gap:10px}
+#stage{position:relative;background:#000;border-radius:12px;overflow:hidden;min-height:180px;touch-action:none}
+video{display:block;width:100%;height:auto;max-height:55vh;object-fit:contain;margin:0 auto}
+.ln{position:absolute;top:0;bottom:0;width:44px;margin-left:-22px;touch-action:none;cursor:ew-resize}
+.ln::before{content:"";position:absolute;left:21px;top:0;bottom:0;width:2px;background:var(--c)}
+.ln.hit::before{background:#ff4d4d;width:4px;left:20px}
+.ln b{position:absolute;left:50%;top:6px;transform:translateX(-50%);background:var(--c);color:#000;font:700 11px system-ui;padding:2px 6px;border-radius:8px}
+.ln i{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);width:30px;height:30px;border-radius:50%;background:var(--c);color:#000;font-style:normal;display:grid;place-items:center;font-size:14px}
+#big{position:absolute;left:0;right:0;bottom:0;padding:10px;text-align:center;background:linear-gradient(transparent,#000a);color:#fff;font:700 40px system-ui;pointer-events:none}
+#big small{display:block;font:500 13px system-ui;opacity:.85}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+label{font-size:13px;color:var(--mut)}
+input[type=number]{width:80px;font-size:18px;padding:6px 8px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--fg)}
+input[type=range]{flex:1;min-width:120px}
+button{font:600 16px system-ui;border:0;border-radius:10px;padding:12px 16px;background:var(--acc);color:#001;cursor:pointer}
+button.sec{background:var(--bd);color:var(--fg)}
+#arm{flex:1;font-size:18px;padding:14px}
+ol{margin:6px 0 0;padding-left:22px;font-size:15px}
+li{padding:3px 0}
+#msg{font-size:13px;color:var(--mut)}
+</style></head><body>
+<div id="app">
+  <div id="stage">
+    <video id="v" playsinline muted autoplay></video>
+    <div class="ln" id="l0" style="--c:#20c997;left:20%"><b>LINE 1</b><i>&#8596;</i></div>
+    <div class="ln" id="l1" style="--c:#fff;left:80%"><b>LINE 2</b><i>&#8596;</i></div>
+    <div id="big"><span id="time">0.00 s</span><small id="sub">Set up, then press Arm</small></div>
+  </div>
+  <div class="card row">
+    <button id="arm">Arm</button>
+    <label>Distance (m) <input id="dist" type="number" value="10" min="1" step="0.5" inputmode="decimal"></label>
+    <input id="nm" type="text" placeholder="Next runner name (optional)" style="flex:1;min-width:150px;font-size:16px;padding:8px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--fg)">
+    <label style="width:100%"><input id="auto" type="checkbox" checked> Auto re-arm for the next runner</label>
+  </div>
+  <div class="card">
+    <div class="row" style="margin-bottom:10px"><button id="pick" style="flex:1">Record / pick a video</button><button id="go" class="sec" disabled>Analyze</button><input id="file" type="file" accept="video/*" hidden></div>
+    <div class="row"><label for="sens">Sensitivity</label><input id="sens" type="range" min="1" max="10" value="6"></div>
+    <div id="msg">Starting camera…</div>
+  </div>
+  <div class="card">
+    <div class="row" style="justify-content:space-between"><strong>Results</strong><button class="sec" id="clr" style="padding:6px 12px;font-size:13px">Clear</button></div>
+    <ol id="hist"></ol>
+  </div>
+  <div class="card" style="font-size:13px;color:var(--mut);line-height:1.5">
+    How to use: prop the phone side-on (tripod or fence), put a cone at each line, drag the two lines on screen to sit on the cones, enter the distance between them, press Arm and run through. Timer starts when you cross the first line and stops at the second. Accuracy is about one video frame. If the live camera stays black, film the run with your camera app (60 fps works best), tap "Record / pick a video", set the lines on your cones and press Analyze.
+  </div>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const v=$('#v'),stage=$('#stage'),lines=[$('#l0'),$('#l1')];
+let mode='live',chain=false,cool=0,nf=0,L=[.2,.8],state='idle',t0=0,first=0,prev=null,fps=30,armAt=0;
+const W=320,H=180,cv=document.createElement('canvas');cv.width=W;cv.height=H;
+const cx=cv.getContext('2d',{willReadFrequently:true});
+
+// draggable lines
+lines.forEach((el,i)=>{
+  el.addEventListener('pointerdown',e=>{el.setPointerCapture(e.pointerId);el._d=true;});
+  el.addEventListener('pointermove',e=>{if(!el._d)return;const r=stage.getBoundingClientRect();
+    L[i]=Math.min(.98,Math.max(.02,(e.clientX-r.left)/r.width));el.style.left=L[i]*100+'%';});
+  const up=()=>{el._d=false;};el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);
+});
+
+async function cam(){
+  try{
+    const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:60}},audio:false});
+    v.srcObject=s;await v.play();
+    fps=Math.round(s.getVideoTracks()[0].getSettings().frameRate||30);
+    $('#msg').textContent='Camera ready at ~'+fps+' fps (±'+(1000/fps).toFixed(0)+' ms).';
+    sched();
+  }catch(e){
+    $('#msg').textContent='Camera unavailable ('+e.message+'). Open this page directly in Chrome and allow camera access.';
+  }
+}
+function sched(){chain=true;v.requestVideoFrameCallback?v.requestVideoFrameCallback(tick):requestAnimationFrame(tick);}
+function tick(now,meta){process(mode==='file'&&meta?meta.mediaTime*1000:now);sched();}
+
+function process(now){
+  if(v.videoWidth===0)return;
+  cx.drawImage(v,0,0,W,H);
+  const bw=Math.max(4,Math.round(W*.03)),cur=[],frac=(.13-$('#sens').value*.01),res=[];
+  for(let i=0;i<2;i++){
+    const x=Math.min(W-bw,Math.max(0,Math.round(L[i]*W-bw/2)));
+    const d=cx.getImageData(x,0,bw,H).data,g=new Uint8Array(bw*H);
+    for(let k=0;k<g.length;k++)g[k]=(d[k*4]*77+d[k*4+1]*150+d[k*4+2]*29)>>8;
+    cur.push(g);
+    let c=0;
+    if(prev)for(let k=0;k<g.length;k++)if(Math.abs(g[k]-prev[i][k])>28)c++;
+    res.push(c/g.length);
+  }
+  prev=cur;
+  lines.forEach((el,i)=>el.classList.toggle('hit',res[i]>frac));
+  if(state==='armed'&&now>armAt){
+    const i=res.findIndex(r=>r>frac);
+    if(i>=0){first=i;t0=now;state='timing';$('#sub').textContent='Running…';}
+  }else if(state==='cool'){if(now>cool){prev=null;state='armed';armAt=0;}}else if(state==='timing'){
+    const o=1-first,dt=(now-t0)/1000;
+    $('#time').textContent=dt.toFixed(2)+' s';
+    if(res[o]>frac&&now-t0>80)finish(dt,now);
+    else if(dt>30&&mode==='live'){state='armed';armAt=now+500;$('#time').textContent='0.00 s';$('#sub').textContent='Timed out. Armed again.';}
+  }
+}
+function finish(dt,now){
+  state=$('#auto').checked?'cool':'idle';cool=now+2000;if(state==='idle'){if(mode==='file')v.pause();$('#arm').textContent='Arm';}
+  const m=parseFloat($('#dist').value)||10,ms=m/dt;
+  $('#time').textContent=dt.toFixed(2)+' s';
+  $('#sub').textContent=ms.toFixed(2)+' m/s · '+(ms*3.6).toFixed(1)+' km/h over '+m+' m';
+  navigator.vibrate&&navigator.vibrate(120);
+  const nm=$('#nm').value.trim();nf++;const h=load();h.push({t:dt,m:m,n:nm});save(h.slice(-50));$('#nm').value='';render();
+}
+function load(){try{return JSON.parse(localStorage.getItem('sprints')||'[]');}catch(e){return [];}}
+function save(h){try{localStorage.setItem('sprints',JSON.stringify(h));}catch(e){}}
+function render(){
+  const h=load();
+  $('#hist').innerHTML=h.length?h.map((r,i)=>'<li>'+(r.n||'Runner '+(i+1))+': <b>'+r.t.toFixed(2)+' s</b> · '+r.m+' m · '+(r.m/r.t*3.6).toFixed(1)+' km/h</li>').join(''):'<li style="list-style:none;color:var(--mut)">No runs yet</li>';
+}
+$('#clr').onclick=()=>{save([]);render();};
+$('#arm').onclick=()=>{
+  if(state!=='idle'){state='idle';$('#arm').textContent='Arm';$('#sub').textContent='Cancelled';return;}
+  prev=null;state='armed';armAt=performance.now()+3000;
+  $('#arm').textContent='Cancel';$('#time').textContent='0.00 s';
+  let n=3;$('#sub').textContent='Get clear… '+n;
+  const iv=setInterval(()=>{n--;if(state!=='armed'||n<=0){clearInterval(iv);if(state==='armed')$('#sub').textContent='Armed. Go!';}else $('#sub').textContent='Get clear… '+n;},1000);
+};
+$('#pick').onclick=()=>$('#file').click();
+$('#file').onchange=e=>{const f=e.target.files[0];if(!f)return;
+  mode='file';state='idle';$('#arm').textContent='Arm';
+  if(v.srcObject){v.srcObject.getTracks().forEach(t=>t.stop());v.srcObject=null;}
+  v.autoplay=false;v.src=URL.createObjectURL(f);v.muted=true;v.load();
+  v.onloadeddata=()=>{v.currentTime=0.05;};
+  $('#go').disabled=false;$('#time').textContent='0.00 s';
+  $('#sub').textContent='Move the lines onto your cones, then press Analyze';
+  $('#msg').textContent='Video loaded.';};
+$('#go').onclick=()=>{if(mode!=='file')return;
+  nf=0;prev=null;state='armed';armAt=-1;v.currentTime=0;v.playbackRate=.5;
+  v.play();if(!chain)sched();$('#sub').textContent='Analyzing…';};
+v.onended=()=>{if(mode==='file'&&state!=='idle'){state='idle';$('#sub').textContent=nf?'Done. Found '+nf+' run(s).':'No crossing found. Check the lines or raise sensitivity.';}};
+render();cam();
+</script></body></html>
