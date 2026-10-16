@@ -53,6 +53,7 @@ body{padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inse
   <div class="card">
     <div class="row" style="margin-bottom:10px"><button id="pick" style="flex:1">Record / pick a video</button><button id="go" class="sec" disabled>Analyze</button><input id="file" type="file" accept="video/*" hidden></div>
     <div class="row"><label for="sens">Sensitivity</label><input id="sens" type="range" min="1" max="15" value="8"></div>
+    <div class="row" style="margin-top:10px"><label>Mode <select id="rm" style="font-size:16px;padding:6px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid var(--bd)"><option value="fly">Two lines</option><option value="race">Race (gun start)</option></select></label><label id="dl" style="display:none">Speaker delay (ms) <input id="off" type="number" value="0" min="0" max="800" step="10"></label></div>
     <div id="msg">Starting camera…</div>
   </div>
   <div class="card">
@@ -60,13 +61,13 @@ body{padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inse
     <ol id="hist"></ol>
   </div>
   <div class="card" style="font-size:13px;color:var(--mut);line-height:1.5">
-    How to use: prop the phone side-on (tripod or fence), put a cone at each line, drag the two lines on screen to sit on the cones, enter the distance between them, press Arm and run through. Timer starts when you cross the first line and stops at the second. Accuracy is about one video frame. If the live camera stays black, film the run with your camera app (60 fps works best), tap "Record / pick a video", set the lines on your cones and press Analyze.
+    How to use: prop the phone side-on (tripod or fence), put a cone at each line, drag the two lines on screen to sit on the cones, enter the distance between them, press Arm and run through. Timer starts when you cross the first line and stops at the second. Accuracy is about one video frame. If the live camera stays black, film the run with your camera app (60 fps works best), tap "Record / pick a video", set the lines on your cones and press Analyze.<br><br>Race mode: put the phone at the finish line facing across the track, set Mode to Race, drag the line onto the finish and press Arm. It says Ready, Set, then plays a start gun through your speaker and the clock starts on the bang. Every runner who crosses the line is added to Results. Press Stop when everyone is done. A Bluetooth speaker adds delay, so adjust Speaker delay to compensate.
   </div>
 </div>
 <script>
 const $=s=>document.querySelector(s);
 const v=$('#v'),stage=$('#stage'),lines=[$('#l0'),$('#l1')];
-let mode='live',chain=false,cool=0,nf=0,L=[.2,.8],state='idle',t0=0,first=0,prev=null,fps=30,armAt=0;
+let mode='live',chain=false,cool=0,nf=0,race=false,ac=null,tm=[],place=0,lastFin=0,L=[.2,.8],state='idle',t0=0,first=0,prev=null,fps=30,armAt=0;
 const W=320,H=180,cv=document.createElement('canvas');cv.width=W;cv.height=H;
 const cx=cv.getContext('2d',{willReadFrequently:true});
 
@@ -107,6 +108,7 @@ function process(now){
   }
   prev=cur;
   lines.forEach((el,i)=>el.classList.toggle('hit',res[i]>frac));
+  if(race){raceStep(res[0]>frac,now);return;}
   if(state==='armed'&&now>armAt){
     const i=res.findIndex(r=>r>frac);
     if(i>=0){first=i;t0=now;state='timing';$('#sub').textContent='Running…';}
@@ -133,6 +135,7 @@ function render(){
 }
 $('#clr').onclick=()=>{save([]);render();};
 $('#arm').onclick=()=>{
+  if(race){if(state!=='idle')stopRace('Race stopped. '+place+' finisher(s).');else startRace();return;}
   if(state!=='idle'){state='idle';$('#arm').textContent='Arm';$('#sub').textContent='Cancelled';return;}
   prev=null;state='armed';armAt=performance.now()+3000;
   $('#arm').textContent='Cancel';$('#time').textContent='0.00 s';
@@ -152,5 +155,49 @@ $('#go').onclick=()=>{if(mode!=='file')return;
   nf=0;prev=null;state='armed';armAt=-1;v.currentTime=0;v.playbackRate=.5;
   v.play();if(!chain)sched();$('#sub').textContent='Analyzing…';};
 v.onended=()=>{if(mode==='file'&&state!=='idle'){state='idle';$('#sub').textContent=nf?'Done. Found '+nf+' run(s).':'No crossing found. Check the lines or raise sensitivity.';}};
+$('#rm').onchange=()=>{race=$('#rm').value==='race';
+  $('#l1').style.display=race?'none':'';$('#dl').style.display=race?'':'none';$('#auto').parentNode.style.display=race?'none':'';
+  if(state!=='idle')stopRace('Stopped.');state='idle';$('#arm').textContent='Arm';$('#dist').value=race?100:10;
+  $('#time').textContent='0.00 s';$('#sub').textContent=race?'Race mode: put the line on the finish, then press Arm':'Set up, then press Arm';};
+function say(w){$('#time').textContent=w.toUpperCase();$('#sub').textContent=w==='Ready'?'Get on your marks':'Hold still…';
+  try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(w);u.rate=.9;speechSynthesis.speak(u);}catch(e){}}
+function startRace(){
+  if(mode!=='live'){$('#sub').textContent='Race mode needs the live camera';return;}
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(!ac)ac=new AC();ac.resume();
+  try{navigator.wakeLock&&navigator.wakeLock.request('screen');}catch(e){}
+  prev=null;state='wait';place=0;lastFin=0;
+  $('#arm').textContent='Stop';say('Ready');
+  const a=2500,b=a+1500+Math.random()*1500;
+  tm=[setTimeout(()=>say('Set'),a),setTimeout(bang,b)];
+}
+function stopRace(msg){tm.forEach(clearTimeout);tm=[];state='idle';$('#arm').textContent='Arm';$('#sub').textContent=msg;try{speechSynthesis.cancel();}catch(e){}}
+function bang(){
+  const t=ac.currentTime+.05,len=Math.floor(ac.sampleRate*.35),b=ac.createBuffer(1,len,ac.sampleRate),d=b.getChannelData(0);
+  for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,3);
+  const n=ac.createBufferSource();n.buffer=b;
+  const g=ac.createGain();g.gain.setValueAtTime(1,t);g.gain.exponentialRampToValueAtTime(.001,t+.35);
+  const o=ac.createOscillator();o.frequency.setValueAtTime(180,t);o.frequency.exponentialRampToValueAtTime(40,t+.15);
+  const og=ac.createGain();og.gain.setValueAtTime(.9,t);og.gain.exponentialRampToValueAtTime(.001,t+.2);
+  const c=ac.createDynamicsCompressor();
+  n.connect(g);g.connect(c);o.connect(og);og.connect(c);c.connect(ac.destination);
+  n.start(t);o.start(t);o.stop(t+.25);
+  t0=performance.now()+50;state='race';place=0;
+  $('#time').textContent='GO!';$('#sub').textContent='Race running. Press Stop when everyone has finished';
+}
+function raceStep(hit,now){
+  if(state!=='race')return;
+  const dt=(now-t0)/1000-(+$('#off').value||0)/1000;
+  if(place===0)$('#time').textContent=Math.max(0,dt).toFixed(2)+' s';
+  if(hit&&now-t0>1000&&now-lastFin>1000){
+    lastFin=now;place++;
+    const m=parseFloat($('#dist').value)||100,nm=$('#nm').value.trim();
+    $('#time').textContent=dt.toFixed(2)+' s';
+    $('#sub').textContent='Finisher '+place+' · '+(m/dt*3.6).toFixed(1)+' km/h avg';
+    navigator.vibrate&&navigator.vibrate(120);
+    const h=load();h.push({t:dt,m:m,n:nm||'Finisher '+place});save(h.slice(-50));$('#nm').value='';render();
+  }
+  if(dt>180)stopRace('Race timed out');
+}
 render();cam();
 </script></body></html>
