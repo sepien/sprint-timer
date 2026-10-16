@@ -29,6 +29,13 @@ button.sec{background:var(--bd);color:var(--fg)}
 ol{margin:6px 0 0;padding-left:22px;font-size:15px}
 li{padding:3px 0}
 #msg{font-size:13px;color:var(--mut)}
+body{padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+@media (orientation:landscape){
+ #app{max-width:none;display:grid;grid-template-columns:minmax(0,1fr) 340px;align-items:start}
+ #stage{grid-column:1;grid-row:1/span 4;position:sticky;top:10px}
+ .card{grid-column:2}
+ video{max-height:calc(100vh - 20px)}
+}
 </style></head><body>
 <div id="app">
   <div id="stage">
@@ -45,7 +52,7 @@ li{padding:3px 0}
   </div>
   <div class="card">
     <div class="row" style="margin-bottom:10px"><button id="pick" style="flex:1">Record / pick a video</button><button id="go" class="sec" disabled>Analyze</button><input id="file" type="file" accept="video/*" hidden></div>
-    <div class="row"><label for="sens">Sensitivity</label><input id="sens" type="range" min="1" max="10" value="6"></div>
+    <div class="row"><label for="sens">Sensitivity</label><input id="sens" type="range" min="1" max="15" value="8"></div>
     <div id="msg">Starting camera…</div>
   </div>
   <div class="card">
@@ -88,14 +95,14 @@ function tick(now,meta){process(mode==='file'&&meta?meta.mediaTime*1000:now);sch
 function process(now){
   if(v.videoWidth===0)return;
   cx.drawImage(v,0,0,W,H);
-  const bw=Math.max(4,Math.round(W*.03)),cur=[],frac=(.13-$('#sens').value*.01),res=[];
+  const s=+$('#sens').value,bw=Math.max(4,Math.round(W*.03)),cur=[],frac=Math.max(.004,.14-s*.009),thr=Math.max(8,34-s*1.7),res=[];
   for(let i=0;i<2;i++){
     const x=Math.min(W-bw,Math.max(0,Math.round(L[i]*W-bw/2)));
     const d=cx.getImageData(x,0,bw,H).data,g=new Uint8Array(bw*H);
     for(let k=0;k<g.length;k++)g[k]=(d[k*4]*77+d[k*4+1]*150+d[k*4+2]*29)>>8;
     cur.push(g);
     let c=0;
-    if(prev)for(let k=0;k<g.length;k++)if(Math.abs(g[k]-prev[i][k])>28)c++;
+    if(prev)for(let k=0;k<g.length;k++)if(Math.abs(g[k]-prev[i][k])>thr)c++;
     res.push(c/g.length);
   }
   prev=cur;
