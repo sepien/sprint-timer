@@ -29,6 +29,15 @@ button.sec{background:var(--bd);color:var(--fg)}
 ol{margin:6px 0 0;padding-left:22px;font-size:15px}
 li{padding:3px 0}
 #msg{font-size:13px;color:var(--mut)}
+#an{position:fixed;inset:0;z-index:50;background:var(--bg);overflow:auto;display:none;padding:calc(10px + env(safe-area-inset-top,0px)) calc(10px + env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) calc(10px + env(safe-area-inset-left,0px))}
+#an.on{display:block}
+#an .wrap{display:flex;flex-direction:column;gap:10px;max-width:900px;margin:0 auto}
+#an .col1,#an .col2{display:flex;flex-direction:column;gap:10px;min-width:0}
+#avw{position:relative;background:#000;border-radius:12px;overflow:hidden;touch-action:pan-y;min-height:120px}
+#av{display:block;width:100%;max-height:50vh;object-fit:contain;margin:0 auto}
+.bt{display:flex;gap:6px}
+.bt button{flex:1;min-width:0;padding:14px 4px;font-size:16px}
+@media (orientation:landscape){#an .wrap{max-width:none;display:grid;grid-template-columns:minmax(0,1fr) 340px;align-items:start}#av{max-height:calc(100vh - 150px)}}
 body{padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
 @media (orientation:landscape){
  #app{max-width:none;display:grid;grid-template-columns:minmax(0,1fr) 340px;align-items:start}
@@ -51,7 +60,7 @@ body{padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inse
     <label style="width:100%"><input id="auto" type="checkbox" checked> Auto re-arm for the next runner</label>
   </div>
   <div class="card">
-    <div class="row" style="margin-bottom:10px"><button id="pick" style="flex:1">Record / pick a video</button><button id="go" class="sec" disabled>Analyze</button><input id="file" type="file" accept="video/*" hidden></div>
+    <div class="row" style="margin-bottom:10px"><button id="pick" style="flex:1">Record / pick a video</button><button id="go" class="sec" disabled>Analyze</button><input id="file" type="file" accept="video/*" hidden><button class="sec" id="oa">Video analyzer</button></div>
     <div class="row"><label for="sens">Sensitivity</label><input id="sens" type="range" min="1" max="15" value="8"></div>
     <div class="row" style="margin-top:10px"><label>Mode <select id="rm" style="font-size:16px;padding:6px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid var(--bd)"><option value="fly">Two lines</option><option value="race">Race (gun start)</option><option value="sound">Race (sound start)</option><option value="duo">Two phones (start + finish)</option></select></label><span id="dl" style="display:none"><label>Speaker delay (ms) <input id="off" type="number" value="0" min="0" max="800" step="10"></label> <button class="sec" id="tb" style="padding:8px 12px;font-size:14px">Test sounds</button> <label><input id="vc" type="checkbox"> Voice</label></span></div>
     <div id="sl" style="display:none;margin-top:10px"><div class="row"><label>Distance to gun (m) <input id="dg" type="number" value="100" min="0" step="1"></label><label>Mic delay (ms) <input id="mo" type="number" value="0" min="0" max="300" step="5"></label></div><div class="row" style="margin-top:8px"><label for="ss">Sound sensitivity</label><input id="ss" type="range" min="1" max="10" value="6"></div><div style="height:8px;background:var(--bd);border-radius:4px;margin-top:8px"><div id="mfill" style="height:100%;width:0;background:var(--acc);border-radius:4px"></div></div></div>
@@ -66,6 +75,22 @@ body{padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inse
     How to use: prop the phone side-on (tripod or fence), put a cone at each line, drag the two lines on screen to sit on the cones, enter the distance between them, press Arm and run through. Timer starts when you cross the first line and stops at the second. Accuracy is about one video frame. If the live camera stays black, film the run with your camera app (60 fps works best), tap "Record / pick a video", set the lines on your cones and press Analyze.<br><br>Two phones: choose Two phones mode on both. Put one phone at the start line (role Start) and one at the finish (role Finish). On one phone tap Make code, copy it and send it to the other phone in any chat app. On the other phone paste it, tap Use pasted code, copy the reply code back, paste it on the first phone and tap Use pasted code again. Then press Arm on both. For best results turn on a hotspot on one phone and join it with the other.<br><br>Race mode: put the phone at the finish line facing across the track, set Mode to Race, drag the line onto the finish and press Arm. It says Ready, Set, then plays a start gun through your speaker and the clock starts on the bang. Every runner who crosses the line is added to Results. Press Stop when everyone is done. A Bluetooth speaker adds delay, so adjust Speaker delay to compensate.<br><br>Sound start mode: put the phone at the finish line, enter the distance from the gun to the phone, press Arm and the clock starts when the phone hears the gun. The app subtracts the time the sound takes to travel (about 0.29 s per 100 m). Use the phone's own microphone, not a Bluetooth one.
   </div>
 </div>
+<div id="an"><div class="wrap">
+ <div class="col1">
+  <div class="row" style="justify-content:space-between"><strong>Video analyzer</strong><span><button class="sec" id="apick" style="padding:8px 12px;font-size:14px">Open video</button> <button class="sec" id="aclose" style="padding:8px 12px;font-size:14px">Close</button></span><input id="afile" type="file" accept="video/*" hidden></div>
+  <div id="avw"><video id="av" playsinline muted></video><div class="ln" id="guide" style="--c:#ffd43b;left:50%;display:none"><i>&#8596;</i></div></div>
+  <input id="ascr" type="range" min="0" max="0" value="0" step="1" style="width:100%">
+  <div class="bt"><button class="sec" id="b10m">-10</button><button class="sec" id="b1m">-1</button><button id="bpl">▶</button><button class="sec" id="b1p">+1</button><button class="sec" id="b10p">+10</button></div>
+ </div>
+ <div class="col2">
+  <div class="card"><div id="aread" style="font:600 20px system-ui">Open a video to start</div>
+   <div class="row" style="margin-top:8px"><label>FPS <input id="afps" type="number" value="30" min="1" max="1000"></label><label>Speed <select id="asp" style="font-size:16px;padding:6px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid var(--bd)"><option value="0.1">0.1x</option><option value="0.25" selected>0.25x</option><option value="0.5">0.5x</option><option value="1">1x</option></select></label><label><input id="agd" type="checkbox"> Guide line</label></div>
+   <div style="font-size:12px;color:var(--mut);margin-top:6px">Swipe on the video to move frame by frame. The FPS is detected automatically, so correct it if the times look wrong.</div></div>
+  <div class="card"><div class="row"><button id="amk" style="flex:1">Mark this frame</button><button class="sec" id="aun">Undo</button><button class="sec" id="acl">Clear</button></div>
+   <ol id="alist"></ol><div id="asum" style="font-weight:600;margin-top:6px"></div>
+   <div class="row" style="margin-top:8px"><label>Distance first to last mark (m) <input id="ad" type="number" value="10" min="0" step="0.5"></label><button class="sec" id="asv" style="padding:8px 12px;font-size:14px">Save to Results</button></div></div>
+ </div>
+</div></div>
 <script>
 const $=s=>document.querySelector(s);
 const v=$('#v'),stage=$('#stage'),lines=[$('#l0'),$('#l1')];
@@ -315,5 +340,78 @@ function raceStep(hit,now){
   }
   if(dt>180)stopRace('Race timed out');
 }
+(()=>{
+  const av=$('#av'),avw=$('#avw'),scr=$('#ascr');
+  let fps=30,fi=0,nfr=0,marks=[];
+  const show=()=>{$('#aread').textContent='Frame '+fi+' · '+(fi/fps).toFixed(3)+' s';scr.value=fi;};
+  const seek=n=>{if(!nfr)return;fi=Math.max(0,Math.min(nfr-1,n));av.currentTime=(fi+.5)/fps;show();};
+  const setPl=p=>{$('#bpl').textContent=p?'❚❚':'▶';};
+  function pausePlay(){if(!av.paused)av.pause();setPl(false);if(!nfr)return;seek(Math.min(nfr-1,Math.floor(av.currentTime*fps+1e-3)));}
+  function tick(){if(av.paused)return;fi=Math.min(nfr-1,Math.floor(av.currentTime*fps+1e-3));show();requestAnimationFrame(tick);}
+  function setFps(f){fps=f;$('#afps').value=f;nfr=Math.floor((av.duration||0)*fps);scr.max=Math.max(0,nfr-1);}
+  function detect(){return new Promise(res=>{
+    if(!av.requestVideoFrameCallback)return res(30);
+    let last=null,min=1e9,n=0,done=false;
+    const fin=()=>{if(done)return;done=true;av.pause();av.playbackRate=1;res(min<1e8?1/min:30);};
+    const cb=(now,m)=>{if(done)return;if(last!==null&&m.mediaTime>last)min=Math.min(min,m.mediaTime-last);last=m.mediaTime;if(++n>=24)fin();else av.requestVideoFrameCallback(cb);};
+    av.playbackRate=.25;av.currentTime=0;
+    av.play().then(()=>av.requestVideoFrameCallback(cb)).catch(fin);
+    setTimeout(fin,3000);
+  });}
+  $('#oa').onclick=()=>$('#an').classList.add('on');
+  $('#aclose').onclick=()=>{pausePlay();$('#an').classList.remove('on');};
+  $('#apick').onclick=()=>$('#afile').click();
+  $('#afile').onchange=async e=>{
+    const f=e.target.files[0];if(!f)return;
+    marks=[];renderMarks();nfr=0;setPl(false);
+    $('#aread').textContent='Loading…';
+    const ready=new Promise(r=>av.onloadedmetadata=r);
+    av.src=URL.createObjectURL(f);av.muted=true;await ready;
+    $('#aread').textContent='Detecting frame rate…';
+    let d=await detect();
+    const C=[24,25,30,48,50,60,90,100,120,240];
+    const c=C.find(x=>Math.abs(d-x)/x<.06);
+    setFps(c||Math.round(d));seek(0);
+  };
+  $('#afps').onchange=()=>{const t=fi/fps;setFps(+$('#afps').value||30);seek(Math.round(t*fps));renderMarks();};
+  $('#asp').onchange=()=>{av.playbackRate=+$('#asp').value;};
+  $('#bpl').onclick=()=>{
+    if(!nfr)return;
+    if(av.paused){if(fi>=nfr-1)seek(0);av.playbackRate=+$('#asp').value;av.play();setPl(true);tick();}
+    else pausePlay();
+  };
+  av.onended=()=>setPl(false);
+  [['#b10m',-10],['#b1m',-1],['#b1p',1],['#b10p',10]].forEach(([s,d])=>$(s).onclick=()=>{pausePlay();seek(fi+d);});
+  scr.oninput=()=>{pausePlay();seek(+scr.value);};
+  let sx=null,sf=0;
+  avw.onpointerdown=e=>{if(e.target.closest('#guide'))return;sx=e.clientX;sf=fi;pausePlay();avw.setPointerCapture(e.pointerId);};
+  avw.onpointermove=e=>{if(sx!==null)seek(sf+Math.round((e.clientX-sx)/8));};
+  avw.onpointerup=avw.onpointercancel=()=>{sx=null;};
+  const g=$('#guide');
+  g.onpointerdown=e=>{g.setPointerCapture(e.pointerId);g._d=1;e.stopPropagation();};
+  g.onpointermove=e=>{if(!g._d)return;const r=avw.getBoundingClientRect();g.style.left=Math.min(98,Math.max(2,(e.clientX-r.left)/r.width*100))+'%';};
+  g.onpointerup=g.onpointercancel=()=>{g._d=0;};
+  $('#agd').onchange=()=>{g.style.display=$('#agd').checked?'':'none';};
+  $('#amk').onclick=()=>{if(!nfr)return;pausePlay();marks.push(fi/fps);renderMarks();};
+  $('#aun').onclick=()=>{marks.pop();renderMarks();};
+  $('#acl').onclick=()=>{marks=[];renderMarks();};
+  $('#ad').oninput=()=>renderMarks();
+  $('#alist').onclick=e=>{const li=e.target.closest('li[data-i]');if(li){pausePlay();seek(Math.round(marks[+li.dataset.i]*fps));}};
+  function renderMarks(){
+    $('#alist').innerHTML=marks.length?marks.map((t,i)=>'<li data-i="'+i+'">'+(i===0?'Start':'Mark '+(i+1))+' · '+t.toFixed(3)+' s'+(i?' · +'+(t-marks[i-1]).toFixed(3)+' s':'')+'</li>').join(''):'<li style="list-style:none;color:var(--mut)">Pause on a frame and tap Mark</li>';
+    if(marks.length>1){
+      const dt=marks[marks.length-1]-marks[0],d=+$('#ad').value||0;
+      $('#asum').textContent='Start to last mark: '+dt.toFixed(3)+' s'+(d&&dt>0?' · '+(d/dt).toFixed(2)+' m/s · '+(d/dt*3.6).toFixed(1)+' km/h':'');
+    }else $('#asum').textContent='';
+  }
+  $('#asv').onclick=()=>{
+    if(marks.length<2)return;
+    const dt=marks[marks.length-1]-marks[0],m=+$('#ad').value||0;
+    if(dt<=0||!m)return;
+    const h=load();h.push({t:dt,m:m,n:'Analyzed'});save(h.slice(-50));render();
+    $('#asum').textContent+=' · saved';
+  };
+  renderMarks();
+})();
 render();cam();
 </script></body></html>
