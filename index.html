@@ -83,7 +83,7 @@ body{padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inse
   <div class="bt"><button class="sec" id="b10m">-10</button><button class="sec" id="b1m">-1</button><button id="bpl">▶</button><button class="sec" id="b1p">+1</button><button class="sec" id="b10p">+10</button></div>
  </div>
  <div class="col2">
-  <div class="card"><div id="aread" style="font:600 20px system-ui">Open a video to start</div>
+  <div class="card"><div id="aread" style="font:600 20px system-ui">Open a video to start</div><div id="ainfo" style="font-size:12px;color:var(--mut)"></div>
    <div class="row" style="margin-top:8px"><label>FPS <input id="afps" type="number" value="30" min="1" max="1000"></label><label>Speed <select id="asp" style="font-size:16px;padding:6px;border-radius:8px;background:var(--bg);color:var(--fg);border:1px solid var(--bd)"><option value="0.1">0.1x</option><option value="0.25" selected>0.25x</option><option value="0.5">0.5x</option><option value="1">1x</option></select></label><label><input id="agd" type="checkbox"> Guide line</label></div>
    <div style="font-size:12px;color:var(--mut);margin-top:6px">Swipe on the video to move frame by frame. The FPS is detected automatically, so correct it if the times look wrong.</div></div>
   <div class="card"><div class="row"><button id="amk" style="flex:1">Mark this frame</button><button class="sec" id="aun">Undo</button><button class="sec" id="acl">Clear</button></div>
@@ -121,7 +121,7 @@ function sched(){chain=true;v.requestVideoFrameCallback?v.requestVideoFrameCallb
 function tick(now,meta){process(mode==='file'&&meta?meta.mediaTime*1000:(meta&&meta.captureTime)||now);sched();}
 
 function process(now){
-  if(v.videoWidth===0)return;
+  if(v.videoWidth===0||window.anOpen)return;
   cx.drawImage(v,0,0,W,H);
   const s=+$('#sens').value,bw=Math.max(4,Math.round(W*.03)),cur=[],frac=Math.max(.004,.14-s*.009),thr=Math.max(8,34-s*1.7),res=[];
   for(let i=0;i<2;i++){
@@ -342,45 +342,54 @@ function raceStep(hit,now){
 }
 (()=>{
   const av=$('#av'),avw=$('#avw'),scr=$('#ascr');
-  let fps=30,fi=0,nfr=0,marks=[];
+  let fps=30,fi=0,nfr=0,marks=[],busy=false,lt=0,sk=false,want=0,skT=0;
   const show=()=>{$('#aread').textContent='Frame '+fi+' · '+(fi/fps).toFixed(3)+' s';scr.value=fi;};
-  const seek=n=>{if(!nfr)return;fi=Math.max(0,Math.min(nfr-1,n));av.currentTime=(fi+.5)/fps;show();};
+  const seek=n=>{if(!nfr||busy)return;fi=Math.max(0,Math.min(nfr-1,n));want=(fi+.5)/fps;show();go();};
+  function go(){
+    if(sk||Math.abs(av.currentTime-want)<1e-4)return;
+    sk=true;av.currentTime=want;clearTimeout(skT);
+    skT=setTimeout(()=>{sk=false;go();},700);
+  }
+  av.addEventListener('seeked',()=>{sk=false;clearTimeout(skT);go();});
   const setPl=p=>{$('#bpl').textContent=p?'❚❚':'▶';};
-  function pausePlay(){if(!av.paused)av.pause();setPl(false);if(!nfr)return;seek(Math.min(nfr-1,Math.floor(av.currentTime*fps+1e-3)));}
+  function pausePlay(){if(busy)return;if(!av.paused)av.pause();setPl(false);if(!nfr)return;seek(Math.min(nfr-1,Math.floor(av.currentTime*fps+1e-3)));}
   function tick(){if(av.paused)return;fi=Math.min(nfr-1,Math.floor(av.currentTime*fps+1e-3));show();requestAnimationFrame(tick);}
-  function setFps(f){fps=f;$('#afps').value=f;nfr=Math.floor((av.duration||0)*fps);scr.max=Math.max(0,nfr-1);}
+  function setFps(f){f=Math.min(480,Math.max(1,+f||30));fps=f;$('#afps').value=f;nfr=Math.floor((av.duration||0)*fps);scr.max=Math.max(0,nfr-1);}
   function detect(){return new Promise(res=>{
     if(!av.requestVideoFrameCallback)return res(30);
-    let last=null,min=1e9,n=0,done=false;
-    const fin=()=>{if(done)return;done=true;av.pause();av.playbackRate=1;res(min<1e8?1/min:30);};
-    const cb=(now,m)=>{if(done)return;if(last!==null&&m.mediaTime>last)min=Math.min(min,m.mediaTime-last);last=m.mediaTime;if(++n>=24)fin();else av.requestVideoFrameCallback(cb);};
+    let last=null,ds=[],n=0,done=false;
+    const fin=()=>{if(done)return;done=true;try{av.pause();}catch(e){}av.playbackRate=1;ds=ds.filter(x=>x>1/500).sort((a,b)=>a-b);res(ds.length>=4?1/ds[Math.floor(ds.length/2)]:30);};
+    const cb=(now,m)=>{if(done)return;if(last!==null&&m.mediaTime>last)ds.push(m.mediaTime-last);last=m.mediaTime;if(++n>=30)fin();else av.requestVideoFrameCallback(cb);};
     av.playbackRate=.25;av.currentTime=0;
     av.play().then(()=>av.requestVideoFrameCallback(cb)).catch(fin);
     setTimeout(fin,3000);
   });}
-  $('#oa').onclick=()=>$('#an').classList.add('on');
-  $('#aclose').onclick=()=>{pausePlay();$('#an').classList.remove('on');};
+  $('#oa').onclick=()=>{window.anOpen=true;$('#an').classList.add('on');try{if(v.srcObject)v.pause();}catch(e){}};
+  $('#aclose').onclick=()=>{window.anOpen=false;pausePlay();$('#an').classList.remove('on');try{if(v.srcObject)v.play();}catch(e){}};
   $('#apick').onclick=()=>$('#afile').click();
-  $('#afile').onchange=async e=>{
+  const oldLoad=async e=>{
     const f=e.target.files[0];if(!f)return;
     marks=[];renderMarks();nfr=0;setPl(false);
     $('#aread').textContent='Loading…';
     const ready=new Promise(r=>av.onloadedmetadata=r);
-    av.src=URL.createObjectURL(f);av.muted=true;await ready;
+    av.src=URL.createObjectURL(f);av.muted=true;av.preload='auto';
+    await Promise.race([ready,new Promise(r=>setTimeout(r,8000))]);
+    if(!isFinite(av.duration)||!av.duration){$('#aread').textContent='Could not read that video. Try another clip.';return;}
     $('#aread').textContent='Detecting frame rate…';
     let d=await detect();
     const C=[24,25,30,48,50,60,90,100,120,240];
-    const c=C.find(x=>Math.abs(d-x)/x<.06);
-    setFps(c||Math.round(d));seek(0);
+    const c=C.find(x=>Math.abs(d-x)/x<.08);
+    setFps(c||30);seek(0);
   };
   $('#afps').onchange=()=>{const t=fi/fps;setFps(+$('#afps').value||30);seek(Math.round(t*fps));renderMarks();};
   $('#asp').onchange=()=>{av.playbackRate=+$('#asp').value;};
   $('#bpl').onclick=()=>{
-    if(!nfr)return;
+    if(!nfr||busy)return;
     if(av.paused){if(fi>=nfr-1)seek(0);av.playbackRate=+$('#asp').value;av.play();setPl(true);tick();}
     else pausePlay();
   };
   av.onended=()=>setPl(false);
+  av.onerror=()=>{$('#aread').textContent='This browser cannot play that video format. Try another clip.';};
   [['#b10m',-10],['#b1m',-1],['#b1p',1],['#b10p',10]].forEach(([s,d])=>$(s).onclick=()=>{pausePlay();seek(fi+d);});
   scr.oninput=()=>{pausePlay();seek(+scr.value);};
   let sx=null,sf=0;
@@ -410,6 +419,26 @@ function raceStep(hit,now){
     if(dt<=0||!m)return;
     const h=load();h.push({t:dt,m:m,n:'Analyzed'});save(h.slice(-50));render();
     $('#asum').textContent+=' · saved';
+  };
+$('#afile').onchange=e=>{
+    const f=e.target.files[0];if(!f)return;
+    marks=[];renderMarks();nfr=0;setPl(false);busy=false;sk=false;
+    av.pause();$('#ainfo').textContent='';
+    $('#aread').textContent='Loading video…';
+    clearTimeout(lt);
+    lt=setTimeout(()=>{if(!nfr)$('#aread').textContent='Still loading. If nothing happens, this video format may not be supported. Try another or shorter clip.';},8000);
+    av.onerror=()=>{clearTimeout(lt);$('#aread').textContent='This browser cannot play that video. Try a clip recorded as H.264 / 1080p.';};
+    av.onloadedmetadata=()=>{
+      clearTimeout(lt);
+      setFps(30);seek(0);
+      $('#ainfo').textContent=av.videoWidth+'x'+av.videoHeight+' · '+av.duration.toFixed(1)+' s';
+      busy=true;$('#aread').textContent='Detecting frame rate…';
+      detect().then(d=>{
+        const C=[24,25,30,48,50,60,90,100,120,240],c=C.find(x=>Math.abs(d-x)/x<.08);
+        busy=false;setFps(c||30);seek(0);
+      });
+    };
+    av.preload='auto';av.src=URL.createObjectURL(f);av.muted=true;av.load();
   };
   renderMarks();
 })();
